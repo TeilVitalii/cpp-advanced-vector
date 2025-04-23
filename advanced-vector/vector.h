@@ -137,7 +137,7 @@ public:
         : data_(std::move(other.data_))
         , size_(std::exchange(other.size_, 0))
     {}
-
+    
     Vector& operator=(const Vector& rhs) {
         if (this != &rhs) {
 
@@ -147,21 +147,15 @@ public:
                 Swap(rhs_copy);
 
             } else {
+                
+                std::size_t min = std::min(size_ , rhs.size_);
+                std::copy_n(rhs.data_.GetAddress(), min, data_.GetAddress());
 
                 if (size_ >= rhs.size_) {
-                    
-                    for (size_t i = 0; i != rhs.size_; ++i) {
-                        data_[i] = rhs.data_[i];
-                    }
                     std::destroy_n(data_ + rhs.size_, size_ - rhs.size_);
                 
                 } else {
-
-                    for (size_t i = 0; i < size_; ++i) {
-                        data_[i] = rhs.data_[i];
-                    }
                     std::uninitialized_copy_n(rhs.data_ + size_, rhs.size_ - size_, data_ + size_);
-
                 }
             }
 
@@ -234,30 +228,6 @@ public:
 
         size_ = new_size;
     }
-   
-    template <typename Value>
-    void PushBack(Value&& value) {
-        if (size_ == Capacity()) {
-
-            RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
-            new (new_data + size_) T(std::forward<Value>(value));
-        
-
-            if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-                std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
-            } else {
-                std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
-            }
-
-            std::destroy_n(data_.GetAddress(), size_);
-            data_.Swap(new_data);
-
-        } else {
-            new (data_ + size_) T(std::forward<Value>(value));
-        }
-
-        ++size_;
-    }
 
     template <typename... Args>
     T& EmplaceBack(Args&&... args) {
@@ -282,6 +252,14 @@ public:
 
         return data_[size_++];
     }
+    
+    void PushBack(const T& value) {
+        EmplaceBack(value);
+    }
+    
+    void PushBack(T&& value) {
+        EmplaceBack(std::move(value));
+    }  
 
     void PopBack() {
         assert(size_);
