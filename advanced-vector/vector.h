@@ -228,7 +228,7 @@ public:
 
         size_ = new_size;
     }
-
+    
     template <typename... Args>
     T& EmplaceBack(Args&&... args) {
         if (size_ == Capacity()) {
@@ -252,21 +252,18 @@ public:
 
         return data_[size_++];
     }
-    
-    void PushBack(const T& value) {
-        EmplaceBack(value);
+       
+    template <typename Value>
+    void PushBack(Value&& value) {
+        EmplaceBack(std::forward<Value>(value));
     }
-    
-    void PushBack(T&& value) {
-        EmplaceBack(std::move(value));
-    }  
 
     void PopBack() {
-        assert(size_);
+        assert(size_ != 0);
         std::destroy_at(data_ + size_ - 1);
         --size_;
     }
-
+    
     template <typename... Args>
     iterator Emplace(const_iterator pos, Args&&... args) {
         assert(pos >= cbegin() && pos <= cend());    
@@ -274,40 +271,12 @@ public:
         std::size_t offset = pos - cbegin();
  
         if (size_ == Capacity()) {
-            
-            RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
-            new (new_data.GetAddress() + offset) T(std::forward<Args>(args)...);
- 
-            if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-                std::uninitialized_move_n(data_.GetAddress(), offset, new_data.GetAddress());
-                std::uninitialized_move_n(data_.GetAddress() + offset, size_ - offset, 
-                                          new_data.GetAddress() + offset + 1);
-            
-            } else {
-                std::uninitialized_copy_n(data_.GetAddress(), offset, new_data.GetAddress());
-                std::uninitialized_copy_n(data_.GetAddress() + offset, size_ - offset, 
-                                          new_data.GetAddress() + offset + 1);
-            }
- 
-            std::destroy_n(data_.GetAddress(), size_);
-            data_.Swap(new_data);
+            InsertAndReallocate(offset, std::forward<Args>(args)...);
             
         } else {
-            
             try {
-                
-                if (pos != cend()) {
-                    
-                    T temp(std::forward<Args>(args)...);                   
-                    new (end()) T(std::forward<T>(data_[size_ - 1]));
-                    
-                    std::move_backward(begin() + offset, end() - 1, end());                 
-                    *(begin() + offset) = std::forward<T>(temp);
-                    
-                } else {
-                    new (end()) T(std::forward<Args>(args)...);
-                }
-                
+                InsertWithoutReallocating(pos, offset, std::forward<Args>(args)...);
+
             } catch (...) {
                 operator delete (end());
                 throw;
@@ -340,6 +309,41 @@ public:
     }
 
 private:
+    template <typename... Args>
+    void InsertAndReallocate(std::size_t offset, Args&&... args) {
+        RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
+        new (new_data.GetAddress() + offset) T(std::forward<Args>(args)...);
+ 
+        if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+            std::uninitialized_move_n(data_.GetAddress(), offset, new_data.GetAddress());
+            std::uninitialized_move_n(data_.GetAddress() + offset, size_ - offset, 
+                                      new_data.GetAddress() + offset + 1);
+            
+        } else {
+            std::uninitialized_copy_n(data_.GetAddress(), offset, new_data.GetAddress());
+            std::uninitialized_copy_n(data_.GetAddress() + offset, size_ - offset, 
+                                      new_data.GetAddress() + offset + 1);
+        }
+ 
+        std::destroy_n(data_.GetAddress(), size_);
+        data_.Swap(new_data);
+    }
+
+    template <typename... Args>
+    void InsertWithoutReallocating(const_iterator pos, std::size_t offset, Args&&... args) {
+        if (pos != cend()) {
+                    
+            T temp(std::forward<Args>(args)...);                   
+            new (end()) T(std::forward<T>(data_[size_ - 1]));
+                    
+            std::move_backward(begin() + offset, end() - 1, end());                 
+            *(begin() + offset) = std::forward<T>(temp);
+                    
+        } else {
+            new (end()) T(std::forward<Args>(args)...);
+        }
+    }
+
     RawMemory<T> data_;
     size_t size_ = 0;
 };
